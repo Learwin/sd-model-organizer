@@ -9,6 +9,11 @@ from tqdm import tqdm
 from scripts.mo.dl.downloader import Downloader
 from scripts.mo.environment import env
 
+def _civitai_api_url(url: str, api_key: str = None) -> str:
+    parsed_url = urlparse(url)
+    if api_key and parsed_url.hostname == 'civitai.com':
+        url = url + '&token=' + api_key if "?" in url else url + '?token=' + api_key
+    return url
 
 class HttpDownloader(Downloader):
 
