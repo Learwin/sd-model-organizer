@@ -11,7 +11,7 @@ from scripts.mo.environment import env, logger
 from scripts.mo.models import Record, ModelType
 
 _DB_FILE = 'database.sqlite'
-_DB_VERSION = 7
+_DB_VERSION = 8
 _DB_TIMEOUT = 30
 
 
@@ -80,6 +80,24 @@ class SQLiteStorage(Storage):
                                     weight REAL DEFAULT 1,
                                     backup_url TEXT)
                                  ''')
+        
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS Tag(
+                id INTEGER PRIMARY KEY,
+                name TEXT UNIQUE
+            );
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS TagSet(
+                record_id INTEGER REFERENCES Record(id) ON DELETE CASCADE,
+                tag_id INTEGER REFERENCES Tag(id) ON DELETE CASCADE
+            );
+            """
+        )        
 
         cursor.execute(f'''CREATE TABLE IF NOT EXISTS Version
                                 (version INTEGER DEFAULT {_DB_VERSION})''')
@@ -107,6 +125,7 @@ class SQLiteStorage(Storage):
             4: self._migrate_4_to_5,
             5: self._migrate_5_to_6,
             6: self._migrate_6_to_7,
+            7: self._migrate_7_to_8,
         }
         for ver in range(current_version, _DB_VERSION):
             self._backup_database(ver)
@@ -166,6 +185,31 @@ class SQLiteStorage(Storage):
         cursor.execute("ALTER TABLE Record ADD COLUMN backup_url TEXT DEFAULT '';")
         cursor.execute("DELETE FROM Version")
         cursor.execute('INSERT INTO Version VALUES (7)')
+        self._connection().commit()
+
+    def _migrate_7_to_8(self):
+        cursor = self._connection().cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS Tag(
+                id INTEGER PRIMARY KEY,
+                name TEXT UNIQUE
+            );
+            """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS TagSet(
+                record_id INTEGER REFERENCES Record(id) ON DELETE CASCADE,
+                tag_id INTEGER REFERENCES Tag(id) ON DELETE CASCADE
+            );
+            """
+        )        
+
+        cursor.execute("DELETE FROM Version")
+        cursor.execute('INSERT INTO Version VALUES (8)')
         self._connection().commit()
 
     def get_all_records(self) -> List:
