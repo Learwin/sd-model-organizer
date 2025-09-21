@@ -102,3 +102,24 @@ class Storage(ABC):
     @abstractmethod
     def get_records_by_download_destination(self, download_path, download_filename) -> List:
         pass
+
+    #Tag
+    @abstractmethod
+    def get_all_tags(self) -> List:
+        pass
+
+    @abstractmethod
+    def add_tag(self, tag) -> int:
+        pass
+
+    @abstractmethod
+    def remove_tag(self, tag_name: str, tag_id: int = None):
+        pass
+
+    @abstractmethod
+    def set_tags_for_record(self, record_id, tag_list):
+        pass
+
+    @abstractmethod
+    def get_tags_for_record(self, record_id) -> List:
+        pass

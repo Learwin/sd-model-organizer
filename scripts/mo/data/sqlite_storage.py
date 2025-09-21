@@ -456,3 +456,82 @@ class SQLiteStorage(Storage):
         for row in rows:
             result.append(map_row_to_record(row))
         return result
+
+    def get_all_tags(self) -> List:
+        cursor = self._connection().cursor()
+        cursor.execute("SELECT name from Tag")
+        rows = cursor.fetchall()
+        result = [row[0].lower() for row in rows if row[0]]
+        return list(set(result))
+
+    def add_tag(self, tag) -> int:
+        tag = tag.lower()
+        cursor = self._connection().cursor()
+        cursor.execute(
+            """
+            INSERT INTO Tag(name) VALUES(?)
+            """,
+            [tag],
+        )
+        self._connection().commit()
+        return cursor.lastrowid
+
+    def remove_tag(self, tag_name: str, tag_id: int = None):
+        tag_name = tag_name.lower() if tag_name else None
+        cursor = self._connection().cursor()
+        if tag_id is None:
+            cursor.execute("""DELETE FROM Tag WHERE name=?""", [tag_name])
+        else:
+            cursor.execute("""DELETE FROM Tag WHERE id=?""", [tag_id])
+        self._connection().commit()
+
+
+    def get_tags_for_record(self, record_id) -> List:
+        cursor = self._connection().cursor()
+        cursor.execute(
+            """
+            SELECT t.name
+            FROM Tag t
+            JOIN TagSet ts ON t.id = ts.tag_id
+            WHERE ts.record_id = ?
+            """,
+            [record_id],
+        )
+        rows = cursor.fetchall()
+        return [row[0].lower() for row in rows if row[0]]
+
+    def set_tags_for_record(self, record_id, tag_list):
+        tag_list = [t.lower() for t in tag_list if t]
+        
+        cursor = self._connection().cursor()
+        current_tags_names = set(self.get_tags_for_record(record_id))
+        new_tags = set(tag_list) - current_tags_names
+        existing_tags = set(tag_list) & current_tags_names
+
+        tag_name_to_id = {}
+        for tag in new_tags:
+            tag_id = self.add_tag(tag)
+            tag_name_to_id[tag] = tag_id
+
+        if existing_tags:
+            cursor.execute(
+                "SELECT id, name FROM Tag WHERE name IN ({seq})".format(
+                    seq=",".join("?" * len(existing_tags))
+                ),
+                list(existing_tags),
+            )
+            for row in cursor.fetchall():
+                tag_name_to_id[row[1]] = row[0]
+
+        cursor.execute("DELETE FROM TagSet WHERE record_id = ?", [record_id])
+
+        for tag_name, tag_id in tag_name_to_id.items():
+            cursor.execute(
+                "INSERT INTO TagSet(record_id, tag_id) VALUES(?, ?)",
+                [record_id, tag_id],
+            )
+        self._connection().commit()
+        cursor.execute(
+            "DELETE FROM Tag WHERE id NOT IN (SELECT DISTINCT tag_id FROM TagSet)"
+        )
+        self._connection().commit()
