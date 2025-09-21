@@ -68,7 +68,7 @@ class Storage(ABC):
         pass
 
     @abstractmethod
-    def add_record(self, record: Record):
+    def add_record(self, record: Record) -> int:
         pass
 
     @abstractmethod

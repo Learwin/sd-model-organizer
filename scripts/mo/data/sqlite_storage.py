@@ -308,7 +308,7 @@ class SQLiteStorage(Storage):
             result.append(map_row_to_record(row))
         return result
 
-    def add_record(self, record: Record):
+    def add_record(self, record: Record) -> int:
         cursor = self._connection().cursor()
         data = (
             record.name,
@@ -352,6 +352,7 @@ class SQLiteStorage(Storage):
                     backup_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             data)
         self._connection().commit()
+        return cursor.lastrowid
 
     def update_record(self, record: Record):
         cursor = self._connection().cursor()
