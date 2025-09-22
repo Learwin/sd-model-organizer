@@ -209,7 +209,7 @@ def _create_ui_update(data_dict=None, selected_version=None, selected_version_id
         name = f"{name} [{base_model_name}]"
         tags.append(base_model_name)
 
-    available_groups = env.storage.get_available_groups()
+    available_groups = env.storage.get_all_tags()
     all_tags = list(set(available_groups + tags))
     all_tags.sort()
 

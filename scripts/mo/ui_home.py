@@ -26,7 +26,7 @@ def _prepare_data(state_json: str):
 
 
 def _get_available_groups():
-    return env.storage.get_available_groups()
+    return env.storage.get_all_tags()
 
 
 def _on_sort_order_changed(sort_order, state_json):

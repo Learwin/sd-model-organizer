@@ -212,7 +212,7 @@ def _on_id_changed(record_data):
     sha256 = None if record is None or not bool(record.sha256_hash) else record.sha256_hash
     location = '' if record is None else (record.location if os.path.isfile(record.location) else '')
 
-    available_groups = env.storage.get_available_groups()
+    available_groups = env.storage.get_all_tags()
     logger.info('Groups loaded: %s', available_groups)
     logger.info('Record groups: %s', record_groups)
     available_groups.sort()

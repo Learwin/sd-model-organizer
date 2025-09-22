@@ -80,10 +80,6 @@ class Storage(ABC):
         pass
 
     @abstractmethod
-    def get_available_groups(self) -> List:
-        pass
-
-    @abstractmethod
     def get_records_by_group(self, group: str) -> List:
         pass
 

@@ -292,7 +292,14 @@ class SQLiteStorage(Storage):
 
     def get_records_by_group(self, group: str) -> List:
         cursor = self._connection().cursor()
-        cursor.execute(f"SELECT * FROM Record WHERE LOWER(groups) LIKE '%{group}%'")
+        cursor.execute(
+            """
+            SELECT r.*
+            FROM Record r
+            JOIN TagSet ts ON r.id = ts.record_id
+            JOIN Tag t ON t.id = ts.tag_id
+            WHERE t.name LIKE '%' || LOWER(?) || '%'
+            """, [group])
         rows = cursor.fetchall()
         result = []
         for row in rows:
@@ -405,18 +412,6 @@ class SQLiteStorage(Storage):
         cursor = self._connection().cursor()
         cursor.execute("DELETE FROM Record WHERE id=?", (_id,))
         self._connection().commit()
-
-    def get_available_groups(self) -> List:
-        cursor = self._connection().cursor()
-        cursor.execute('SELECT groups FROM Record')
-        rows = cursor.fetchall()
-        result = []
-        for row in rows:
-            if row[0]:
-                result.extend(row[0].split(","))
-
-        result = list(set(result))
-        return list(filter(None, result))
 
     def get_all_records_locations(self) -> List:
         cursor = self._connection().cursor()

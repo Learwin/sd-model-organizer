@@ -73,14 +73,6 @@ class FirebaseStorage(Storage):
     def remove_record(self, _id):
         self._records().document(_id).delete()
 
-    def get_available_groups(self) -> List:
-        records = self.get_all_records()
-        groups = []
-        for record in records:
-            if len(record.groups) > 0:
-                groups.extend(record.groups)
-        return list(set(groups))
-
     def get_records_by_group(self, group: str) -> List:
         col_ref = self._records()
 
@@ -107,3 +99,19 @@ class FirebaseStorage(Storage):
 
     def get_records_by_download_destination(self, download_path, download_filename) -> List:
         return []  # No implementation for firebase storage
+    
+    def get_all_tags(self) -> List:
+        return []  # No implementation for firebase storage
+
+    def add_tag(self, tag) -> int:
+        return None  # No implementation for firebase storage
+
+    def remove_tag(self, tag_name: str, tag_id: int = None):
+        pass  # No implementation for firebase storage
+
+    def set_tags_for_record(self, record_id, tag_list):
+        pass # No implementation for firebase storage
+
+    def get_tags_for_record(self, record_id) -> List:
+        return [] # No implementation for firebase storage
+
