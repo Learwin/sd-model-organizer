@@ -61,7 +61,7 @@ class SQLiteStorage(Storage):
 
         cursor.execute('''CREATE TABLE IF NOT EXISTS Record
                                     (id INTEGER PRIMARY KEY,
-                                    _name TEXT,
+                                    name TEXT,
                                     model_type TEXT,
                                     download_url TEXT,
                                     url TEXT DEFAULT '',
@@ -206,15 +206,23 @@ class SQLiteStorage(Storage):
                 tag_id INTEGER REFERENCES Tag(id) ON DELETE CASCADE
             );
             """
-        )        
+        )       
 
+        cursor.execute("ALTER TABLE Record RENAME COLUMN _name TO name;") 
         cursor.execute("DELETE FROM Version")
         cursor.execute('INSERT INTO Version VALUES (8)')
         self._connection().commit()
 
     def get_all_records(self) -> List:
         cursor = self._connection().cursor()
-        cursor.execute('SELECT * FROM Record')
+        cursor.execute(
+            """
+            SELECT r.*, GROUP_CONCAT(t.name, ',') AS tags
+            FROM Record r
+            LEFT JOIN TagSet ts ON r.id = ts.record_id
+            LEFT JOIN Tag t ON t.id = ts.tag_id
+            GROUP BY r.id
+            """)
         rows = cursor.fetchall()
         result = []
         for row in rows:
@@ -224,17 +232,22 @@ class SQLiteStorage(Storage):
     def query_records(self, name_query: str = None, groups=None, model_types=None, show_downloaded=True,
                       show_not_downloaded=True) -> List:
 
-        query = 'SELECT * FROM Record'
+        query = """
+            SELECT r.*, GROUP_CONCAT(t.name, ',') AS tags
+            FROM Record r
+            LEFT JOIN TagSet ts ON r.id = ts.record_id
+            LEFT JOIN Tag t ON t.id = ts.tag_id
+            """
 
         is_where_appended = False
-        append_and = False
+        append_and = False    
 
         if name_query is not None and name_query:
             if not is_where_appended:
                 query += ' WHERE'
                 is_where_appended = True
 
-            query += f" LOWER(_name) LIKE '%{name_query}%'"
+            query += f" LOWER(r.name) LIKE '%?%'"
             append_and = True
 
         if model_types is not None and len(model_types) > 0:
@@ -246,31 +259,33 @@ class SQLiteStorage(Storage):
                 query += ' AND'
 
             query += ' ('
-            append_or = False
-            for model_type in model_types:
-                if append_or:
-                    query += ' OR'
-                query += f" model_type='{model_type}'"
-                append_or = True
-
+            query += ' OR '.join(["r.model_type=?" for _ in model_types])
             query += ')'
 
             append_and = True
-            pass
 
         if groups is not None and len(groups) > 0:
             if not is_where_appended:
                 query += ' WHERE'
 
-            for group in groups:
-                if append_and:
+            for idx, group in enumerate(groups):
+                if append_and or idx > 0:
                     query += ' AND'
-                query += f" LOWER(groups) LIKE '%{group}%'"
+                query += " t.name LIKE %?%"
                 append_and = True
 
+        query += " GROUP BY r.id"
         logger.debug('query: %s',query)
         cursor = self._connection().cursor()
-        cursor.execute(query)
+        params = []
+        if name_query:
+            params.append(f"%{name_query.lower()}%")
+        if model_types:
+            params.extend(model_types)
+        if groups:
+            params.extend([f"%{g.lower()}%" for g in groups])   
+
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         result = []
         for row in rows:
@@ -286,7 +301,14 @@ class SQLiteStorage(Storage):
 
     def get_record_by_id(self, id_) -> Record:
         cursor = self._connection().cursor()
-        cursor.execute('SELECT * FROM Record WHERE id=?', (id_,))
+        cursor.execute(
+            """
+            SELECT r.*, GROUP_CONCAT(t.name, ',') AS tags 
+            FROM Record r
+            LEFT JOIN TagSet ts ON r.id = ts.record_id
+            LEFT JOIN Tag t ON t.id = ts.tag_id
+            WHERE r.id=?
+            """, (id_,))
         row = cursor.fetchone()
         return None if row is None else map_row_to_record(row)
 
@@ -294,11 +316,12 @@ class SQLiteStorage(Storage):
         cursor = self._connection().cursor()
         cursor.execute(
             """
-            SELECT r.*
+            SELECT r.*, GROUP_CONCAT(t.name, ',') AS tags 
             FROM Record r
             JOIN TagSet ts ON r.id = ts.record_id
             JOIN Tag t ON t.id = ts.tag_id
             WHERE t.name LIKE '%' || LOWER(?) || '%'
+            group by r.id
             """, [group])
         rows = cursor.fetchall()
         result = []
@@ -339,7 +362,7 @@ class SQLiteStorage(Storage):
         )
         cursor.execute(
             """INSERT INTO Record(
-                    _name,
+                    name,
                     model_type,
                     download_url,
                     url,
@@ -385,7 +408,7 @@ class SQLiteStorage(Storage):
         )
         cursor.execute(
             """UPDATE Record SET 
-                    _name=?,
+                    name=?,
                     model_type=?,
                     download_url=?,
                     url=?,
@@ -426,7 +449,15 @@ class SQLiteStorage(Storage):
 
     def get_records_by_name(self, record_name) -> List:
         cursor = self._connection().cursor()
-        cursor.execute('SELECT * FROM Record WHERE _name=?', (record_name,))
+        cursor.execute(
+            """
+            SELECT r.*, GROUP_CONCAT(t.name, ',') AS tags 
+            FROM Record r
+            JOIN TagSet ts ON r.id = ts.record_id
+            JOIN Tag t ON t.id = ts.tag_id
+            WHERE r.name=?
+            group by r.id
+            """, (record_name,))
         rows = cursor.fetchall()
         result = []
         for row in rows:
@@ -435,7 +466,15 @@ class SQLiteStorage(Storage):
 
     def get_records_by_url(self, url) -> List:
         cursor = self._connection().cursor()
-        cursor.execute('SELECT * FROM Record WHERE url=?', (url,))
+        cursor.execute(
+            """
+            SELECT r.*, GROUP_CONCAT(t.name, ',') AS tags 
+            FROM Record r
+            JOIN TagSet ts ON r.id = ts.record_id
+            JOIN Tag t ON t.id = ts.tag_id 
+            WHERE r.url=?
+            group by r.id
+            """, (url,))
         rows = cursor.fetchall()
         result = []
         for row in rows:
@@ -444,7 +483,15 @@ class SQLiteStorage(Storage):
 
     def get_records_by_download_destination(self, download_path, download_filename) -> List:
         cursor = self._connection().cursor()
-        cursor.execute('SELECT * FROM Record WHERE download_path=? AND download_filename=?',
+        cursor.execute(
+            """
+            SELECT r.*, GROUP_CONCAT(t.name, ',') AS tags 
+            FROM Record r
+            JOIN TagSet ts ON r.id = ts.record_id
+            JOIN Tag t ON t.id = ts.tag_id 
+            WHERE r.download_path=? AND r.download_filename=?
+            group by r.id
+            """,
                        (download_path, download_filename,))
         rows = cursor.fetchall()
         result = []
