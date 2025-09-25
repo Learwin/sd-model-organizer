@@ -150,15 +150,11 @@ def _on_description_output_changed(record_data, name: str, model_type_value: str
 
         logger.info('record to save: %s', record)
 
-        record_id_changed = None
         if record_id is not None and record_id:
             env.storage.update_record(record)
-            record_id_changed = record_id
         else:
-            record_id_changed = env.storage.add_record(record)
+             env.storage.add_record(record)
 
-        if record_id_changed is not None:
-            env.storage.set_tags_for_record(record_id_changed, record.groups)
         return [
             gr.HTML.update(visible=False),
             generate_ui_token()

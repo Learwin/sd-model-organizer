@@ -31,11 +31,11 @@ def map_row_to_record(row) -> Record:
         sha256_hash=row[11],
         md5_hash=row[12],
         created_at=row[13],
-        groups=row[14].split(',') if row[14] else [],
-        subdir=row[15],
-        location=row[16],
-        weight=row[17],
-        backup_url=row[18]
+        subdir=row[14],
+        location=row[15],
+        weight=row[16],
+        backup_url=row[17],
+        groups=row[18].split(',') if row[18] else [],
     )
 
 
@@ -74,7 +74,6 @@ class SQLiteStorage(Storage):
                                     sha256_hash TEXT DEFAULT '',
                                     md5_hash TEXT DEFAULT '',
                                     created_at INTEGER DEFAULT 0,
-                                    groups TEXT DEFAULT '',
                                     subdir TEXT DEFAULT '',
                                     location TEXT DEFAULT '',
                                     weight REAL DEFAULT 1,
@@ -188,30 +187,41 @@ class SQLiteStorage(Storage):
         self._connection().commit()
 
     def _migrate_7_to_8(self):
-        cursor = self._connection().cursor()
+        connection = self._connection() 
+        cursor = connection.cursor()
+        try:
+            connection.execute("BEGIN")
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS Tag(
+                    id INTEGER PRIMARY KEY,
+                    name TEXT UNIQUE
+                );
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS TagSet(
+                    record_id INTEGER REFERENCES Record(id) ON DELETE CASCADE,
+                    tag_id INTEGER REFERENCES Tag(id) ON DELETE CASCADE
+                );
+                """
+            )    
 
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS Tag(
-                id INTEGER PRIMARY KEY,
-                name TEXT UNIQUE
-            );
-            """
-        )
+            #Migrating Record.groups -> Tag and TagSet
+            cursor.execute("SELECT id, groups from Record")   
+            rows = cursor.fetchall()
+            for row in rows:
+                self.set_tags_for_record(row[0], [tag.strip() for tag in row[1].split(",") if tag.strip()])
 
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS TagSet(
-                record_id INTEGER REFERENCES Record(id) ON DELETE CASCADE,
-                tag_id INTEGER REFERENCES Tag(id) ON DELETE CASCADE
-            );
-            """
-        )       
-
-        cursor.execute("ALTER TABLE Record RENAME COLUMN _name TO name;") 
-        cursor.execute("DELETE FROM Version")
-        cursor.execute('INSERT INTO Version VALUES (8)')
-        self._connection().commit()
+            cursor.execute("ALTER TABLE Record RENAME COLUMN _name TO name;") 
+            cursor.execute("ALTER TABLE Record DROP COLUMN groups;") 
+            cursor.execute("DELETE FROM Version")
+            cursor.execute('INSERT INTO Version VALUES (8)')
+            connection.commit()
+        except Exception as e:
+            connection.rollback
+            raise e
 
     def get_all_records(self) -> List:
         cursor = self._connection().cursor()
@@ -339,97 +349,111 @@ class SQLiteStorage(Storage):
         return result
 
     def add_record(self, record: Record) -> int:
-        cursor = self._connection().cursor()
-        data = (
-            record.name,
-            record.model_type.value,
-            record.download_url,
-            record.url,
-            record.download_path,
-            record.download_filename,
-            record.preview_url,
-            record.description,
-            record.positive_prompts,
-            record.negative_prompts,
-            record.sha256_hash,
-            record.md5_hash,
-            record.created_at,
-            ",".join(record.groups),
-            record.subdir,
-            record.location,
-            record.weight,
-            record.backup_url
-        )
-        cursor.execute(
-            """INSERT INTO Record(
-                    name,
-                    model_type,
-                    download_url,
-                    url,
-                    download_path,
-                    download_filename,
-                    preview_url,
-                    description,
-                    positive_prompts,
-                    negative_prompts,
-                    sha256_hash,
-                    md5_hash,
-                    created_at,
-                    groups,
-                    subdir,
-                    location,
-                    weight,
-                    backup_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            data)
-        self._connection().commit()
+
+        connection = self._connection()
+        cursor = connection.cursor()
+        try:
+            connection.execute("BEGIN")
+            data = (
+                record.name,
+                record.model_type.value,
+                record.download_url,
+                record.url,
+                record.download_path,
+                record.download_filename,
+                record.preview_url,
+                record.description,
+                record.positive_prompts,
+                record.negative_prompts,
+                record.sha256_hash,
+                record.md5_hash,
+                record.created_at,
+                record.subdir,
+                record.location,
+                record.weight,
+                record.backup_url
+            )
+            cursor.execute(
+                """INSERT INTO Record(
+                        name,
+                        model_type,
+                        download_url,
+                        url,
+                        download_path,
+                        download_filename,
+                        preview_url,
+                        description,
+                        positive_prompts,
+                        negative_prompts,
+                        sha256_hash,
+                        md5_hash,
+                        created_at,
+                        subdir,
+                        location,
+                        weight,
+                        backup_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                data)
+            
+            self.set_tags_for_record(cursor.lastrowid, record.groups)
+            self._connection().commit()
+            
+        except Exception as e:
+            connection.rollback()
+            raise e
+
         return cursor.lastrowid
 
     def update_record(self, record: Record):
-        cursor = self._connection().cursor()
-        data = (
-            record.name,
-            record.model_type.value,
-            record.download_url,
-            record.url,
-            record.download_path,
-            record.download_filename,
-            record.preview_url,
-            record.description,
-            record.positive_prompts,
-            record.negative_prompts,
-            record.sha256_hash,
-            record.md5_hash,
-            ",".join(record.groups),
-            record.subdir,
-            record.location,
-            record.weight,
-            record.backup_url,
-            record.id_
-        )
-        cursor.execute(
-            """UPDATE Record SET 
-                    name=?,
-                    model_type=?,
-                    download_url=?,
-                    url=?,
-                    download_path=?,
-                    download_filename=?,
-                    preview_url=?,
-                    description=?,
-                    positive_prompts=?,
-                    negative_prompts=?,
-                    sha256_hash=?,
-                    md5_hash=?,
-                    groups=?,
-                    subdir=?,
-                    location=?,
-                    weight=?,
-                    backup_url=?
-                WHERE id=?
-            """, data
-        )
-
-        self._connection().commit()
+        connection = self._connection()
+        cursor = connection.cursor()
+        try:
+            connection.execute("BEGIN")
+            data = (
+                record.name,
+                record.model_type.value,
+                record.download_url,
+                record.url,
+                record.download_path,
+                record.download_filename,
+                record.preview_url,
+                record.description,
+                record.positive_prompts,
+                record.negative_prompts,
+                record.sha256_hash,
+                record.md5_hash,
+                record.subdir,
+                record.location,
+                record.weight,
+                record.backup_url,
+                record.id_
+            )
+            cursor.execute(
+                """UPDATE Record SET 
+                        name=?,
+                        model_type=?,
+                        download_url=?,
+                        url=?,
+                        download_path=?,
+                        download_filename=?,
+                        preview_url=?,
+                        description=?,
+                        positive_prompts=?,
+                        negative_prompts=?,
+                        sha256_hash=?,
+                        md5_hash=?,
+                        subdir=?,
+                        location=?,
+                        weight=?,
+                        backup_url=?
+                    WHERE id=?
+                """, data
+            )
+            self.set_tags_for_record(cursor.lastrowid, record.groups)
+            self._connection().commit()
+            
+        except Exception as e:
+            connection.rollback()
+            raise e
 
     def remove_record(self, _id):
         cursor = self._connection().cursor()
@@ -509,14 +533,17 @@ class SQLiteStorage(Storage):
     def add_tag(self, tag) -> int:
         tag = tag.lower()
         cursor = self._connection().cursor()
-        cursor.execute(
-            """
-            INSERT INTO Tag(name) VALUES(?)
-            """,
-            [tag],
-        )
-        self._connection().commit()
-        return cursor.lastrowid
+        try:
+            cursor.execute("INSERT INTO Tag(name) VALUES(?)", (tag,))
+            tag_id = cursor.lastrowid
+        except Exception:
+            # Constraint failed → tag already exists
+            cursor.execute("SELECT id FROM Tag WHERE name = ?", (tag,))
+            row = cursor.fetchone()
+            if not row:
+                raise  
+            tag_id = row[0]
+        return tag_id
 
     def remove_tag(self, tag_name: str, tag_id: int = None):
         tag_name = tag_name.lower() if tag_name else None
@@ -543,9 +570,9 @@ class SQLiteStorage(Storage):
         return [row[0].lower() for row in rows if row[0]]
 
     def set_tags_for_record(self, record_id, tag_list):
-        tag_list = [t.lower() for t in tag_list if t]
-        
         cursor = self._connection().cursor()
+        tag_list = [t.lower() for t in tag_list if t]
+
         current_tags_names = set(self.get_tags_for_record(record_id))
         new_tags = set(tag_list) - current_tags_names
         existing_tags = set(tag_list) & current_tags_names
@@ -572,8 +599,6 @@ class SQLiteStorage(Storage):
                 "INSERT INTO TagSet(record_id, tag_id) VALUES(?, ?)",
                 [record_id, tag_id],
             )
-        self._connection().commit()
         cursor.execute(
             "DELETE FROM Tag WHERE id NOT IN (SELECT DISTINCT tag_id FROM TagSet)"
         )
-        self._connection().commit()
